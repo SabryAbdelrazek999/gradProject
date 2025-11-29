@@ -91,42 +91,55 @@ export async function performScan(scanId: string, targetUrl: string, scanType: s
       }
     }
 
-    // Save vulnerabilities to storage
+    // Save vulnerabilities to storage first (awaited sequentially to avoid race conditions)
     for (const vuln of vulnerabilities) {
-      await storage.createVulnerability(vuln);
+      try {
+        await storage.createVulnerability(vuln);
+      } catch (err) {
+        console.error("Failed to save vulnerability:", err);
+      }
     }
 
-    // Update scan with results
-    await storage.updateScan(scanId, {
-      status: "completed",
-      completedAt: new Date(),
-      totalVulnerabilities: vulnerabilities.length,
-      criticalCount,
-      highCount,
-      mediumCount,
-      lowCount,
-    });
+    // Update scan with results only after all vulnerabilities are saved
+    try {
+      await storage.updateScan(scanId, {
+        status: "completed",
+        completedAt: new Date(),
+        totalVulnerabilities: vulnerabilities.length,
+        criticalCount,
+        highCount,
+        mediumCount,
+        lowCount,
+      });
+    } catch (err) {
+      console.error("Failed to update scan status:", err);
+    }
 
   } catch (error: any) {
     // Handle scan errors
     const errorMessage = error.message || "Unknown error occurred";
     
-    await storage.updateScan(scanId, {
-      status: "failed",
-      completedAt: new Date(),
-    });
+    try {
+      await storage.updateScan(scanId, {
+        status: "failed",
+        completedAt: new Date(),
+        totalVulnerabilities: 0,
+        criticalCount: 0,
+        highCount: 0,
+        mediumCount: 0,
+        lowCount: 0,
+      });
+    } catch (storageError) {
+      console.error("Failed to update scan status:", storageError);
+    }
 
-    // Add error as a finding
-    vulnerabilities.push({
-      scanId,
-      type: "Scan Error",
-      severity: "Low",
-      title: "Unable to complete scan",
-      description: `The scan could not be completed: ${errorMessage}`,
-      affectedUrl: targetUrl,
-      remediation: "Verify the URL is accessible and try again.",
-      details: { error: errorMessage },
-    });
+    return {
+      vulnerabilities: [],
+      criticalCount: 0,
+      highCount: 0,
+      mediumCount: 0,
+      lowCount: 0,
+    };
   }
 
   return {
