@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -11,21 +12,54 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Search, Play, Loader2, Globe, Shield, Zap } from "lucide-react";
+import { Search, Play, Loader2, Globe, Shield, Zap, CheckCircle, AlertTriangle } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Scan } from "@shared/schema";
 
 export default function ScanNow() {
   const [url, setUrl] = useState("");
   const [scanType, setScanType] = useState("quick");
-  const [isScanning, setIsScanning] = useState(false);
+  const [activeScanId, setActiveScanId] = useState<string | null>(null);
   const { toast } = useToast();
 
-  // todo: remove mock functionality
-  const recentUrls = [
-    "https://example.com",
-    "https://test-site.org",
-    "https://demo.app",
-  ];
+  const { data: recentScans } = useQuery<Scan[]>({
+    queryKey: ["/api/scans/recent"],
+  });
+
+  const { data: activeScan, isLoading: scanLoading } = useQuery<Scan & { vulnerabilities: any[] }>({
+    queryKey: ["/api/scans", activeScanId],
+    enabled: !!activeScanId,
+    refetchInterval: (data) => {
+      if (data?.state?.data?.status === "running" || data?.state?.data?.status === "pending") {
+        return 2000;
+      }
+      return false;
+    },
+  });
+
+  const scanMutation = useMutation({
+    mutationFn: async (data: { targetUrl: string; scanType: string }) => {
+      const response = await apiRequest("POST", "/api/scans", data);
+      return response.json();
+    },
+    onSuccess: (scan: Scan) => {
+      setActiveScanId(scan.id);
+      queryClient.invalidateQueries({ queryKey: ["/api/scans"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
+      toast({
+        title: "Scan Started",
+        description: `Scanning ${url}...`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Scan Failed",
+        description: "Failed to start the scan. Please try again.",
+        variant: "destructive",
+      });
+    },
+  });
 
   const handleStartScan = () => {
     if (!url) {
@@ -37,21 +71,16 @@ export default function ScanNow() {
       return;
     }
 
-    setIsScanning(true);
-    toast({
-      title: "Scan Started",
-      description: `Scanning ${url} with ${scanType} scan...`,
-    });
+    let targetUrl = url;
+    if (!url.startsWith("http://") && !url.startsWith("https://")) {
+      targetUrl = "https://" + url;
+    }
 
-    // todo: remove mock functionality - simulate scan
-    setTimeout(() => {
-      setIsScanning(false);
-      toast({
-        title: "Scan Complete",
-        description: "Vulnerability scan completed successfully",
-      });
-    }, 3000);
+    scanMutation.mutate({ targetUrl, scanType });
   };
+
+  const recentUrls = Array.from(new Set((recentScans || []).map(s => s.targetUrl))).slice(0, 5);
+  const isScanning = scanMutation.isPending || (activeScan && (activeScan.status === "running" || activeScan.status === "pending"));
 
   return (
     <div className="p-6 space-y-6" data-testid="page-scan-now">
@@ -130,37 +159,96 @@ export default function ScanNow() {
             </Select>
           </div>
 
-          <div className="space-y-2">
-            <Label>Recently Scanned</Label>
-            <div className="flex flex-wrap gap-2">
-              {recentUrls.map((recentUrl) => (
-                <Badge
-                  key={recentUrl}
-                  variant="secondary"
-                  className="cursor-pointer"
-                  onClick={() => setUrl(recentUrl)}
-                  data-testid={`badge-recent-${recentUrl.replace(/[^a-z0-9]/gi, '-')}`}
-                >
-                  {recentUrl}
-                </Badge>
-              ))}
+          {recentUrls.length > 0 && (
+            <div className="space-y-2">
+              <Label>Recently Scanned</Label>
+              <div className="flex flex-wrap gap-2">
+                {recentUrls.map((recentUrl) => (
+                  <Badge
+                    key={recentUrl}
+                    variant="secondary"
+                    className="cursor-pointer"
+                    onClick={() => setUrl(recentUrl)}
+                    data-testid={`badge-recent-${recentUrl.replace(/[^a-z0-9]/gi, '-')}`}
+                  >
+                    {recentUrl}
+                  </Badge>
+                ))}
+              </div>
             </div>
-          </div>
+          )}
         </CardContent>
       </Card>
 
-      {isScanning && (
-        <Card className="bg-card border-card-border border-primary/50">
-          <CardContent className="p-6">
-            <div className="flex items-center gap-4">
-              <div className="flex items-center justify-center w-12 h-12 rounded-full bg-primary/10">
-                <Loader2 className="w-6 h-6 text-primary animate-spin" />
+      {activeScan && (
+        <Card className={`bg-card border-card-border ${activeScan.status === "running" || activeScan.status === "pending" ? "border-primary/50" : activeScan.status === "completed" ? "border-primary" : "border-destructive"}`}>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2">
+              {activeScan.status === "running" || activeScan.status === "pending" ? (
+                <Loader2 className="w-5 h-5 text-primary animate-spin" />
+              ) : activeScan.status === "completed" ? (
+                <CheckCircle className="w-5 h-5 text-primary" />
+              ) : (
+                <AlertTriangle className="w-5 h-5 text-destructive" />
+              )}
+              {activeScan.status === "running" || activeScan.status === "pending" 
+                ? "Scan in Progress" 
+                : activeScan.status === "completed" 
+                  ? "Scan Completed" 
+                  : "Scan Failed"}
+            </CardTitle>
+            <CardDescription className="font-mono">{activeScan.targetUrl}</CardDescription>
+          </CardHeader>
+          <CardContent>
+            {activeScan.status === "completed" && (
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
+                <div className="text-center p-3 bg-muted/50 rounded-md">
+                  <p className="text-2xl font-bold text-foreground">{activeScan.totalVulnerabilities}</p>
+                  <p className="text-xs text-muted-foreground">Total</p>
+                </div>
+                <div className="text-center p-3 bg-destructive/10 rounded-md">
+                  <p className="text-2xl font-bold text-destructive">{activeScan.criticalCount}</p>
+                  <p className="text-xs text-muted-foreground">Critical</p>
+                </div>
+                <div className="text-center p-3 bg-orange-500/10 rounded-md">
+                  <p className="text-2xl font-bold text-orange-500">{activeScan.highCount}</p>
+                  <p className="text-xs text-muted-foreground">High</p>
+                </div>
+                <div className="text-center p-3 bg-yellow-500/10 rounded-md">
+                  <p className="text-2xl font-bold text-yellow-500">{activeScan.mediumCount}</p>
+                  <p className="text-xs text-muted-foreground">Medium</p>
+                </div>
+                <div className="text-center p-3 bg-primary/10 rounded-md">
+                  <p className="text-2xl font-bold text-primary">{activeScan.lowCount}</p>
+                  <p className="text-xs text-muted-foreground">Low</p>
+                </div>
               </div>
-              <div>
-                <p className="font-medium text-foreground">Scanning in progress...</p>
-                <p className="text-sm text-muted-foreground">Analyzing {url}</p>
+            )}
+            
+            {activeScan.vulnerabilities && activeScan.vulnerabilities.length > 0 && (
+              <div className="mt-4 space-y-2">
+                <h4 className="text-sm font-medium text-foreground">Findings:</h4>
+                <div className="max-h-64 overflow-y-auto space-y-2">
+                  {activeScan.vulnerabilities.map((vuln: any, index: number) => (
+                    <div 
+                      key={index}
+                      className="flex items-start gap-3 p-3 bg-muted/30 rounded-md border border-border"
+                    >
+                      <Badge 
+                        variant={vuln.severity === "Critical" || vuln.severity === "High" ? "destructive" : "secondary"}
+                        className="shrink-0"
+                      >
+                        {vuln.severity}
+                      </Badge>
+                      <div className="min-w-0">
+                        <p className="font-medium text-foreground">{vuln.title}</p>
+                        <p className="text-sm text-muted-foreground truncate">{vuln.description}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
-            </div>
+            )}
           </CardContent>
         </Card>
       )}

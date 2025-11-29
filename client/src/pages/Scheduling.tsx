@@ -1,10 +1,12 @@
 import { useState } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -14,41 +16,63 @@ import {
 } from "@/components/ui/select";
 import { Calendar, Plus, Clock, Trash2, Play, Pause } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
-
-// todo: remove mock functionality
-const mockSchedules = [
-  {
-    id: 1,
-    url: "https://example.com",
-    frequency: "daily",
-    time: "02:00",
-    enabled: true,
-    lastRun: "2025-11-29 02:00",
-  },
-  {
-    id: 2,
-    url: "https://test-site.org",
-    frequency: "weekly",
-    time: "03:00",
-    enabled: true,
-    lastRun: "2025-11-25 03:00",
-  },
-  {
-    id: 3,
-    url: "https://demo.app",
-    frequency: "monthly",
-    time: "01:00",
-    enabled: false,
-    lastRun: "2025-11-01 01:00",
-  },
-];
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { ScheduledScan } from "@shared/schema";
 
 export default function Scheduling() {
-  const [schedules, setSchedules] = useState(mockSchedules);
   const [newUrl, setNewUrl] = useState("");
   const [frequency, setFrequency] = useState("daily");
   const [time, setTime] = useState("02:00");
   const { toast } = useToast();
+
+  const { data: schedules, isLoading } = useQuery<ScheduledScan[]>({
+    queryKey: ["/api/schedules"],
+  });
+
+  const createMutation = useMutation({
+    mutationFn: async (data: { targetUrl: string; frequency: string; time: string }) => {
+      const response = await apiRequest("POST", "/api/schedules", data);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules"] });
+      setNewUrl("");
+      toast({
+        title: "Schedule Added",
+        description: `Scheduled ${frequency} scan successfully`,
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to create schedule",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const updateMutation = useMutation({
+    mutationFn: async ({ id, updates }: { id: string; updates: Partial<ScheduledScan> }) => {
+      const response = await apiRequest("PATCH", `/api/schedules/${id}`, updates);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules"] });
+    },
+  });
+
+  const deleteMutation = useMutation({
+    mutationFn: async (id: string) => {
+      await apiRequest("DELETE", `/api/schedules/${id}`);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/schedules"] });
+      toast({
+        title: "Schedule Removed",
+        description: "Scheduled scan has been deleted",
+      });
+    },
+  });
 
   const handleAddSchedule = () => {
     if (!newUrl) {
@@ -60,38 +84,31 @@ export default function Scheduling() {
       return;
     }
 
-    const newSchedule = {
-      id: Date.now(),
-      url: newUrl,
-      frequency,
-      time,
-      enabled: true,
-      lastRun: "Never",
-    };
+    let targetUrl = newUrl;
+    if (!newUrl.startsWith("http://") && !newUrl.startsWith("https://")) {
+      targetUrl = "https://" + newUrl;
+    }
 
-    setSchedules([...schedules, newSchedule]);
-    setNewUrl("");
-    toast({
-      title: "Schedule Added",
-      description: `Scheduled ${frequency} scan for ${newUrl}`,
-    });
+    createMutation.mutate({ targetUrl, frequency, time });
   };
 
-  const handleToggleSchedule = (id: number) => {
-    setSchedules(
-      schedules.map((s) =>
-        s.id === id ? { ...s, enabled: !s.enabled } : s
-      )
+  const handleToggleSchedule = (id: string, currentEnabled: boolean) => {
+    updateMutation.mutate({ id, updates: { enabled: !currentEnabled } });
+  };
+
+  const handleDeleteSchedule = (id: string) => {
+    deleteMutation.mutate(id);
+  };
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-6" data-testid="page-scheduling">
+        <h1 className="text-2xl font-semibold text-foreground">Scheduling</h1>
+        <Skeleton className="h-48" />
+        <Skeleton className="h-64" />
+      </div>
     );
-  };
-
-  const handleDeleteSchedule = (id: number) => {
-    setSchedules(schedules.filter((s) => s.id !== id));
-    toast({
-      title: "Schedule Removed",
-      description: "Scheduled scan has been deleted",
-    });
-  };
+  }
 
   return (
     <div className="p-6 space-y-6" data-testid="page-scheduling">
@@ -144,7 +161,11 @@ export default function Scheduling() {
               />
             </div>
           </div>
-          <Button onClick={handleAddSchedule} data-testid="button-add-schedule">
+          <Button 
+            onClick={handleAddSchedule} 
+            disabled={createMutation.isPending}
+            data-testid="button-add-schedule"
+          >
             <Calendar className="w-4 h-4 mr-2" />
             Add Schedule
           </Button>
@@ -159,7 +180,7 @@ export default function Scheduling() {
           </CardTitle>
         </CardHeader>
         <CardContent className="space-y-4">
-          {schedules.length === 0 ? (
+          {!schedules || schedules.length === 0 ? (
             <p className="text-muted-foreground text-center py-8">
               No scheduled scans. Add one above to get started.
             </p>
@@ -173,16 +194,18 @@ export default function Scheduling() {
                 >
                   <div className="flex-1 min-w-0">
                     <p className="font-mono text-sm text-foreground truncate">
-                      {schedule.url}
+                      {schedule.targetUrl}
                     </p>
                     <div className="flex flex-wrap items-center gap-2 mt-1">
                       <Badge variant="secondary">{schedule.frequency}</Badge>
                       <span className="text-xs text-muted-foreground">
                         at {schedule.time}
                       </span>
-                      <span className="text-xs text-muted-foreground">
-                        Last run: {schedule.lastRun}
-                      </span>
+                      {schedule.lastRun && (
+                        <span className="text-xs text-muted-foreground">
+                          Last run: {new Date(schedule.lastRun).toLocaleString()}
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -193,8 +216,8 @@ export default function Scheduling() {
                         <Pause className="w-4 h-4 text-muted-foreground" />
                       )}
                       <Switch
-                        checked={schedule.enabled}
-                        onCheckedChange={() => handleToggleSchedule(schedule.id)}
+                        checked={schedule.enabled ?? false}
+                        onCheckedChange={() => handleToggleSchedule(schedule.id, schedule.enabled ?? false)}
                         data-testid={`switch-schedule-${schedule.id}`}
                       />
                     </div>

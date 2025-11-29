@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Separator } from "@/components/ui/separator";
+import { Skeleton } from "@/components/ui/skeleton";
 import {
   Select,
   SelectContent,
@@ -12,30 +14,95 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Settings as SettingsIcon, Key, Bell, Shield, Save } from "lucide-react";
+import { Key, Bell, Shield, Save, Copy, Check } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
+import type { Settings as SettingsType } from "@shared/schema";
 
 export default function Settings() {
   const { toast } = useToast();
-  const [apiKey, setApiKey] = useState("zap_sk_***************");
-  const [emailNotifications, setEmailNotifications] = useState(true);
-  const [scanDepth, setScanDepth] = useState("medium");
-  const [autoScan, setAutoScan] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [localSettings, setLocalSettings] = useState({
+    scanDepth: "medium",
+    autoScan: false,
+    emailNotifications: true,
+  });
+
+  const { data: settings, isLoading } = useQuery<SettingsType & { apiKey: string }>({
+    queryKey: ["/api/settings"],
+  });
+
+  useEffect(() => {
+    if (settings) {
+      setLocalSettings({
+        scanDepth: settings.scanDepth || "medium",
+        autoScan: settings.autoScan || false,
+        emailNotifications: settings.emailNotifications ?? true,
+      });
+    }
+  }, [settings]);
+
+  const updateMutation = useMutation({
+    mutationFn: async (updates: Partial<SettingsType>) => {
+      const response = await apiRequest("PATCH", "/api/settings", updates);
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({
+        title: "Settings Saved",
+        description: "Your preferences have been updated successfully",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to save settings",
+        variant: "destructive",
+      });
+    },
+  });
+
+  const regenerateKeyMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest("POST", "/api/settings/regenerate-key");
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
+      toast({
+        title: "API Key Regenerated",
+        description: "Your new API key has been generated",
+      });
+    },
+  });
 
   const handleSaveSettings = () => {
-    toast({
-      title: "Settings Saved",
-      description: "Your preferences have been updated successfully",
-    });
+    updateMutation.mutate(localSettings);
   };
 
-  const handleRegenerateKey = () => {
-    setApiKey("zap_sk_" + Math.random().toString(36).substring(2, 15));
-    toast({
-      title: "API Key Regenerated",
-      description: "Your new API key has been generated",
-    });
+  const handleCopyKey = () => {
+    if (settings?.apiKey) {
+      navigator.clipboard.writeText(settings.apiKey);
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+      toast({
+        title: "Copied",
+        description: "API key copied to clipboard",
+      });
+    }
   };
+
+  if (isLoading) {
+    return (
+      <div className="p-6 space-y-6" data-testid="page-settings">
+        <h1 className="text-2xl font-semibold text-foreground">Settings</h1>
+        <Skeleton className="h-48" />
+        <Skeleton className="h-48" />
+        <Skeleton className="h-32" />
+      </div>
+    );
+  }
 
   return (
     <div className="p-6 space-y-6" data-testid="page-settings">
@@ -58,13 +125,26 @@ export default function Settings() {
               <div className="flex gap-2">
                 <Input
                   id="api-key"
-                  type="password"
-                  value={apiKey}
+                  type="text"
+                  value={settings?.apiKey || ""}
                   readOnly
                   className="font-mono"
                   data-testid="input-api-key"
                 />
-                <Button variant="secondary" onClick={handleRegenerateKey} data-testid="button-regenerate-key">
+                <Button 
+                  variant="secondary" 
+                  size="icon"
+                  onClick={handleCopyKey}
+                  data-testid="button-copy-key"
+                >
+                  {copied ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
+                </Button>
+                <Button 
+                  variant="secondary" 
+                  onClick={() => regenerateKeyMutation.mutate()}
+                  disabled={regenerateKeyMutation.isPending}
+                  data-testid="button-regenerate-key"
+                >
                   Regenerate
                 </Button>
               </div>
@@ -88,7 +168,10 @@ export default function Settings() {
           <CardContent className="space-y-6">
             <div className="space-y-2">
               <Label>Default Scan Depth</Label>
-              <Select value={scanDepth} onValueChange={setScanDepth}>
+              <Select 
+                value={localSettings.scanDepth} 
+                onValueChange={(value) => setLocalSettings(prev => ({ ...prev, scanDepth: value }))}
+              >
                 <SelectTrigger className="w-full md:w-64" data-testid="select-scan-depth">
                   <SelectValue />
                 </SelectTrigger>
@@ -111,8 +194,8 @@ export default function Settings() {
               </div>
               <Switch
                 id="auto-scan"
-                checked={autoScan}
-                onCheckedChange={setAutoScan}
+                checked={localSettings.autoScan}
+                onCheckedChange={(checked) => setLocalSettings(prev => ({ ...prev, autoScan: checked }))}
                 data-testid="switch-auto-scan"
               />
             </div>
@@ -139,8 +222,8 @@ export default function Settings() {
               </div>
               <Switch
                 id="email-notifications"
-                checked={emailNotifications}
-                onCheckedChange={setEmailNotifications}
+                checked={localSettings.emailNotifications}
+                onCheckedChange={(checked) => setLocalSettings(prev => ({ ...prev, emailNotifications: checked }))}
                 data-testid="switch-email-notifications"
               />
             </div>
@@ -148,7 +231,11 @@ export default function Settings() {
         </Card>
 
         <div className="flex justify-end">
-          <Button onClick={handleSaveSettings} data-testid="button-save-settings">
+          <Button 
+            onClick={handleSaveSettings} 
+            disabled={updateMutation.isPending}
+            data-testid="button-save-settings"
+          >
             <Save className="w-4 h-4 mr-2" />
             Save Settings
           </Button>

@@ -160,7 +160,17 @@ export class MemStorage implements IStorage {
 
   async createVulnerability(insertVuln: InsertVulnerability): Promise<Vulnerability> {
     const id = randomUUID();
-    const vuln: Vulnerability = { ...insertVuln, id };
+    const vuln: Vulnerability = {
+      id,
+      scanId: insertVuln.scanId,
+      type: insertVuln.type,
+      severity: insertVuln.severity,
+      title: insertVuln.title,
+      description: insertVuln.description,
+      affectedUrl: insertVuln.affectedUrl,
+      remediation: insertVuln.remediation ?? null,
+      details: insertVuln.details ?? null,
+    };
     this.vulnerabilities.set(id, vuln);
     return vuln;
   }
@@ -221,7 +231,13 @@ export class MemStorage implements IStorage {
 
   async createSettings(insertSettings: InsertSettings): Promise<Settings> {
     const id = randomUUID();
-    const settings: Settings = { ...insertSettings, id };
+    const settings: Settings = {
+      id,
+      userId: insertSettings.userId ?? null,
+      scanDepth: insertSettings.scanDepth ?? "medium",
+      autoScan: insertSettings.autoScan ?? false,
+      emailNotifications: insertSettings.emailNotifications ?? true,
+    };
     this.settings.set(id, settings);
     return settings;
   }
