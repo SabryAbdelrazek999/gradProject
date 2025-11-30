@@ -1,19 +1,54 @@
-import ActivityTable from '../ActivityTable';
+import React, { useEffect, useState } from "react";
+import ActivityTable from "../ActivityTable";
 
-// todo: remove mock functionality
-const mockActivities = [
-  { id: 1, type: 'Completed Scans', status: 'Completed', timestamp: '15:10 29.50', action: 'Sourtexis' },
-  { id: 2, type: 'Completed Scans', status: 'Reports', timestamp: '27.00 20.21', action: 'Sourtexis' },
-  { id: 3, type: 'Completed Scans', status: 'Completed', timestamp: '32.30 20.20', action: 'Sourtexis' },
-];
+interface Scan {
+  id: string;
+  targetUrl: string;
+  scanType: string;
+  completedAt?: string;
+  totalVulnerabilities?: number;
+  criticalCount?: number;
+  highCount?: number;
+  mediumCount?: number;
+  lowCount?: number;
+}
 
 export default function ActivityTableExample() {
+  const [scans, setScans] = useState<Scan[]>([]);
+  const [loading, setLoading] = useState(true);
+
+  const fetchScans = async () => {
+    try {
+      const res = await fetch("/api/scans/recent?limit=10");
+      const data = await res.json();
+      setScans(data);
+    } catch (err) {
+      console.error("Failed to fetch scans:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchScans();
+    const interval = setInterval(fetchScans, 5000); // تحديث كل 5 ثواني
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleViewSource = (id: string) => {
+    console.log("View source for activity:", id);
+    // هنا ممكن تفتح صفحة التفاصيل لكل scan
+  };
+
   return (
     <div className="p-4">
-      <ActivityTable 
-        activities={mockActivities} 
-        onViewSource={(id) => console.log('View source for activity:', id)}
-      />
+      {loading ? (
+        <p>Loading scans...</p>
+      ) : scans.length === 0 ? (
+        <p>No scans found.</p>
+      ) : (
+        <ActivityTable activities={scans} onViewSource={handleViewSource} />
+      )}
     </div>
   );
 }

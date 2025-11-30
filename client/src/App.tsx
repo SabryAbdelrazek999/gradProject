@@ -13,6 +13,7 @@ import ScanNow from "@/pages/ScanNow";
 import Scheduling from "@/pages/Scheduling";
 import Reports from "@/pages/Reports";
 import Settings from "@/pages/Settings";
+import AboutUs from "@/pages/AboutUs";
 import About from "@/pages/About";
 import FAQ from "@/pages/FAQ";
 
@@ -25,7 +26,7 @@ function Router() {
       <Route path="/scheduling" component={Scheduling} />
       <Route path="/reports" component={Reports} />
       <Route path="/settings" component={Settings} />
-      <Route path="/about-us" component={About} />
+      <Route path="/about-us" component={AboutUs} />
       <Route path="/about" component={About} />
       <Route path="/faq" component={FAQ} />
       <Route component={NotFound} />

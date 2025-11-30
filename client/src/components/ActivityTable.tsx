@@ -1,66 +1,75 @@
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import React from "react";
+import { Button } from "@/components/ui/button";
 
-export interface ActivityItem {
-  id: number;
-  type: string;
-  status: string;
-  timestamp: string;
-  action: string;
+interface Scan {
+  id: string;
+  targetUrl: string;
+  scanType: string;
+  completedAt?: string;
+  totalVulnerabilities?: number;
+  criticalCount?: number;
+  highCount?: number;
+  mediumCount?: number;
+  lowCount?: number;
 }
 
 interface ActivityTableProps {
-  activities: ActivityItem[];
-  onViewSource?: (id: number) => void;
+  activities: Scan[];
+  onViewSource: (id: string) => void;
 }
 
 export default function ActivityTable({ activities, onViewSource }: ActivityTableProps) {
+  const severityColors = {
+    critical: "bg-red-500",
+    high: "bg-orange-500",
+    medium: "bg-yellow-400",
+    low: "bg-teal-400",
+  };
+
   return (
-    <Card className="bg-card border-card-border" data-testid="activity-table">
-      <CardHeader className="pb-4">
-        <CardTitle className="text-lg font-semibold text-foreground">Recent Activity Feed</CardTitle>
-      </CardHeader>
-      <CardContent className="p-0">
-        <Table>
-          <TableHeader>
-            <TableRow className="border-border hover:bg-transparent">
-              <TableHead className="text-muted-foreground w-12">#</TableHead>
-              <TableHead className="text-muted-foreground">Completed Scans</TableHead>
-              <TableHead className="text-muted-foreground">Collaterals</TableHead>
-              <TableHead className="text-muted-foreground">Scanteles</TableHead>
-            </TableRow>
-          </TableHeader>
-          <TableBody>
-            {activities.map((activity) => (
-              <TableRow 
-                key={activity.id} 
-                className="border-border"
-                data-testid={`activity-row-${activity.id}`}
-              >
-                <TableCell className="text-foreground font-medium">{activity.id}</TableCell>
-                <TableCell className="text-foreground">{activity.status}</TableCell>
-                <TableCell className="text-muted-foreground font-mono text-sm">{activity.timestamp}</TableCell>
-                <TableCell>
-                  <button
-                    onClick={() => onViewSource?.(activity.id)}
-                    className="text-primary hover:underline text-sm"
-                    data-testid={`link-source-${activity.id}`}
-                  >
-                    {activity.action}
-                  </button>
-                </TableCell>
-              </TableRow>
-            ))}
-          </TableBody>
-        </Table>
-      </CardContent>
-    </Card>
+    <table className="w-full border-collapse border border-gray-700">
+      <thead>
+        <tr className="bg-gray-800 text-left">
+          <th className="p-2 border border-gray-600">#</th>
+          <th className="p-2 border border-gray-600">Target</th>
+          <th className="p-2 border border-gray-600">Scan Type</th>
+          <th className="p-2 border border-gray-600">Completed</th>
+          <th className="p-2 border border-gray-600">Vulnerabilities</th>
+          <th className="p-2 border border-gray-600">Action</th>
+        </tr>
+      </thead>
+      <tbody>
+        {activities.map((scan, index) => {
+          const total = scan.totalVulnerabilities || 0;
+          const criticalPct = total ? (scan.criticalCount || 0) / total * 100 : 0;
+          const highPct = total ? (scan.highCount || 0) / total * 100 : 0;
+          const mediumPct = total ? (scan.mediumCount || 0) / total * 100 : 0;
+          const lowPct = total ? (scan.lowCount || 0) / total * 100 : 0;
+
+          return (
+            <tr key={scan.id} className="hover:bg-gray-900">
+              <td className="p-2 border border-gray-600">{index + 1}</td>
+              <td className="p-2 border border-gray-600">{scan.targetUrl}</td>
+              <td className="p-2 border border-gray-600">{scan.scanType}</td>
+              <td className="p-2 border border-gray-600">
+                {scan.completedAt ? new Date(scan.completedAt).toLocaleString() : "Pending"}
+              </td>
+              <td className="p-2 border border-gray-600">
+                <div className="w-full h-4 bg-gray-700 rounded overflow-hidden flex">
+                  {criticalPct > 0 && <div className={`${severityColors.critical} h-full`} style={{ width: `${criticalPct}%` }} title={`Critical: ${scan.criticalCount}`} />}
+                  {highPct > 0 && <div className={`${severityColors.high} h-full`} style={{ width: `${highPct}%` }} title={`High: ${scan.highCount}`} />}
+                  {mediumPct > 0 && <div className={`${severityColors.medium} h-full`} style={{ width: `${mediumPct}%` }} title={`Medium: ${scan.mediumCount}`} />}
+                  {lowPct > 0 && <div className={`${severityColors.low} h-full`} style={{ width: `${lowPct}%` }} title={`Low: ${scan.lowCount}`} />}
+                  {total === 0 && <span className="text-gray-400 text-xs">0</span>}
+                </div>
+              </td>
+              <td className="p-2 border border-gray-600">
+                <Button size="sm" onClick={() => onViewSource(scan.id)}>View Details</Button>
+              </td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
   );
 }

@@ -1,42 +1,29 @@
-# Build stage
-FROM node:20-alpine AS builder
-
-WORKDIR /app
-
-# Copy package files
-COPY package.json package-lock.json ./
-
-# Install dependencies
-RUN npm ci
-
-# Copy source code
-COPY . .
-
-# Build the application
-RUN npm run build
-
-# Production stage
+# استخدم نسخة Node.js خفيفة
 FROM node:20-alpine
 
+# نحدد مجلد العمل
 WORKDIR /app
 
-# Install dumb-init for proper signal handling
-RUN apk add --no-cache dumb-init
+# تثبيت bash و dumb-init لإدارة الإشارات بشكل صحيح
+RUN apk add --no-cache dumb-init bash
 
-# Copy package files
+# نسخ ملفات الحزم
 COPY package.json package-lock.json ./
 
-# Install production dependencies only
-RUN npm ci --only=production
+# تثبيت كل dependencies (dev + prod)
+RUN npm ci
 
-# Copy built application from builder
-COPY --from=builder /app/dist ./dist
+# نسخ باقي الكود
+COPY . .
 
-# Expose port
+# عمل build للمشروع (client + server)
+RUN npm run build
+
+# فتح المنفذ
 EXPOSE 5000
 
-# Use dumb-init to handle signals properly
+# dumb-init لإدارة الإشارات بشكل صحيح
 ENTRYPOINT ["dumb-init", "--"]
 
-# Start the application
-CMD ["node", "dist/index.js"]
+# تشغيل نسخة الإنتاج
+CMD ["npm", "run", "start"]
