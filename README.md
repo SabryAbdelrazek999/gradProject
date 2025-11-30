@@ -2,28 +2,32 @@
 
 A professional web vulnerability scanning application for detecting security issues including XSS, SQL injection, CSRF, insecure headers, and SSL/TLS problems.
 
+## 📋 Getting Started
+
+**First time setting up?** See [SETUP.md](SETUP.md) for complete installation instructions.
+
+**Quick overview:** See [DOCKER_SETUP.md](DOCKER_SETUP.md) for Docker details.
+
 ## Quick Start
 
-### With Docker Desktop (Recommended)
+### With Docker Desktop (Recommended - No Installation Needed!)
 
 ```bash
-# Production
 docker-compose up --build
-
-# Development with hot-reload
-docker-compose -f docker-compose.dev.yml up --build
 ```
 
-Access the app at `http://localhost:5000`
+Open `http://localhost:5000` in your browser.
 
-### Local Development (without Docker)
+### With Node.js Locally
 
 ```bash
-npm install
-npm run dev
+npm install      # Downloads dependencies (~500MB)
+npm run dev      # Start development server
 ```
 
-Access the app at `http://localhost:5000`
+Open `http://localhost:5000` in your browser.
+
+**[Full setup guide →](SETUP.md)**
 
 ## Features
 
