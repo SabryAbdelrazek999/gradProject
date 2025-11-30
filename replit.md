@@ -208,3 +208,34 @@ Preferred communication style: Simple, everyday language.
 - `DATABASE_URL` for database connection
 - Development vs production mode switching
 - Replit-specific environment variables
+
+### Docker Support
+
+**Docker Configuration:**
+- Multi-stage Dockerfile for optimized production builds
+- Separate development and production compose files
+- Production image uses Alpine Linux for minimal size
+- Includes dumb-init for proper signal handling
+- Node.js 20 LTS runtime
+
+**Docker Compose Files:**
+- `docker-compose.yml` - Production deployment with single app container
+- `docker-compose.dev.yml` - Development mode with hot-reload and volume mounts
+- Automatic rebuilding on compose up
+
+**Running with Docker:**
+```bash
+# Production
+docker-compose up --build
+
+# Development
+docker-compose -f docker-compose.dev.yml up --build
+
+# Access on http://localhost:5000
+```
+
+**Docker Notes:**
+- Application uses in-memory storage by default
+- PostgreSQL can be enabled in compose file
+- Port 5000 exposed for web access
+- See DOCKER_SETUP.md for detailed instructions
