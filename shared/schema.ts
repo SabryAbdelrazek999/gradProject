@@ -5,8 +5,11 @@ import { z } from "zod";
 // Users table
 export const users = pgTable("users", {
   id: varchar("id", { length: 36 }).primaryKey(),
-  username: text("username").notNull().unique(),
-  password: text("password").notNull(),
+  username: text("username").unique(),
+  password: text("password"),
+  googleId: text("google_id").unique(),
+  email: text("email"),
+  avatar: text("avatar"),
   apiKey: text("api_key"),
 });
 
@@ -21,6 +24,7 @@ export type User = typeof users.$inferSelect;
 // Scans table
 export const scans = pgTable("scans", {
   id: varchar("id", { length: 36 }).primaryKey(),
+  userId: varchar("user_id", { length: 36 }).notNull(),
   targetUrl: text("target_url").notNull(),
   scanType: text("scan_type").notNull().default("quick"),
   status: text("status").notNull().default("pending"),
@@ -64,13 +68,22 @@ export type Vulnerability = typeof vulnerabilities.$inferSelect;
 // Scheduled scans table
 export const scheduledScans = pgTable("scheduled_scans", {
   id: varchar("id", { length: 36 }).primaryKey(),
+  userId: varchar("user_id", { length: 36 }).notNull(),
   targetUrl: text("target_url").notNull(),
-  frequency: text("frequency").notNull(),
+  frequency: text("frequency").notNull(), // daily, weekly, monthly, quarterly, annually
   time: text("time").notNull(),
   enabled: boolean("enabled").default(true),
   lastRun: timestamp("last_run"),
   nextRun: timestamp("next_run"),
 });
+
+export const FREQUENCY_OPTIONS = [
+  { value: "daily", label: "Daily", category: "Regular" },
+  { value: "weekly", label: "Weekly", category: "Regular" },
+  { value: "monthly", label: "Monthly", category: "Regular" },
+  { value: "quarterly", label: "Quarterly (Every 3 months)", category: "Extended" },
+  { value: "annually", label: "Annually (Yearly)", category: "Extended" },
+] as const;
 
 export const insertScheduledScanSchema = createInsertSchema(scheduledScans).pick({
   targetUrl: true,

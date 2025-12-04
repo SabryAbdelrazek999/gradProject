@@ -116,16 +116,19 @@ export default function Settings() {
               API Configuration
             </CardTitle>
             <CardDescription>
-              Manage your API keys for programmatic access
+              Your unique API key protects your reports and scans from unauthorized access
             </CardDescription>
           </CardHeader>
           <CardContent className="space-y-4">
+            <div className="bg-muted/50 border border-primary/20 rounded-lg p-3 text-sm text-muted-foreground">
+              Your API key is required to access and download your vulnerability reports. Keep it private and never share it publicly.
+            </div>
             <div className="space-y-2">
-              <Label htmlFor="api-key">API Key</Label>
+              <Label htmlFor="api-key">Your API Key (Private)</Label>
               <div className="flex gap-2">
                 <Input
                   id="api-key"
-                  type="text"
+                  type="password"
                   value={settings?.apiKey || ""}
                   readOnly
                   className="font-mono"

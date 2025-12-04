@@ -9,6 +9,45 @@ The application provides a comprehensive dashboard for monitoring security scans
 ## User Preferences
 
 Preferred communication style: Simple, everyday language.
+Build approach: Incremental - add features one at a time.
+
+## Recent Changes (December 1, 2025)
+
+### Google OAuth Authentication - COMPLETED
+- ✅ Google OAuth 2.0 integration with passport-google-oauth20
+- ✅ Users can now sign in with Google (gmail) account
+- ✅ Automatic user account creation on first Google login
+- ✅ Stores user email and avatar from Google profile
+- ✅ Google login button added to Login page
+- ✅ OAuth credentials conditional - won't crash if not provided
+- **⏳ Pending:** User to provide GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET
+
+### Scheduling Frequency Categorization - COMPLETED  
+- ✅ Updated schema with frequency options: daily, weekly, monthly, quarterly, annually
+- ✅ Organized frequencies into two categories:
+  - Regular: Daily, Weekly, Monthly
+  - Extended: Quarterly, Annually
+- ✅ Updated Scheduling UI to display categorized frequency options
+- ✅ Frequency badges show user-friendly labels in schedule list
+
+### Authentication System - COMPLETED
+- ✅ PostgreSQL database created with Replit integration
+- ✅ User authentication endpoints: `/api/auth/login`, `/api/auth/signup`, `/api/auth/me`, `/api/auth/logout`
+- ✅ Login/Signup pages with proper form validation
+- ✅ AuthProvider context with useAuth hook for route protection
+- ✅ Session management with express-session (userId stored in session)
+- ✅ User-based data isolation: userId added to scans and scheduledScans tables
+- ✅ Protected routes: Unauthenticated users redirect to login
+
+### Schema Updates
+- Scans now include userId field for user isolation
+- ScheduledScans now include userId field for user isolation
+- Settings already had userId field
+- Users table now supports OAuth:
+  - googleId (unique): Google OAuth ID
+  - email: User email from Google or signup
+  - avatar: Profile picture from Google
+  - password: Optional for OAuth users
 
 ## System Architecture
 
@@ -39,7 +78,7 @@ Preferred communication style: Simple, everyday language.
 - Home - Overview dashboard with recent activity
 - Dashboard - Comprehensive analytics with charts and statistics
 - Scan Now - Interface for initiating new scans
-- Scheduling - Automated scan configuration
+- Scheduling - Automated scan configuration with frequency options
 - Reports - Scan history and vulnerability reports
 - Settings - Application configuration and API key management
 - About/FAQ - Documentation and help pages
@@ -51,7 +90,8 @@ Preferred communication style: Simple, everyday language.
 - **Framework:** Express.js
 - **Database ORM:** Drizzle ORM
 - **Database:** PostgreSQL (via Neon serverless)
-- **Session Management:** express-session with connect-pg-simple or memorystore
+- **Session Management:** express-session with MemoryStore
+- **Authentication:** Passport.js with local strategy and Google OAuth 2.0
 - **Build:** esbuild for server bundling
 
 **API Design:**
@@ -61,11 +101,17 @@ Preferred communication style: Simple, everyday language.
 - Request logging middleware for debugging
 
 **Key API Endpoints:**
+- `/api/auth/signup` - Create new user account
+- `/api/auth/login` - Authenticate user
+- `/api/auth/me` - Get current user
+- `/api/auth/logout` - End user session
+- `/api/auth/google` - Initiate Google OAuth flow
+- `/api/auth/google/callback` - Google OAuth callback (requires GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET)
 - `/api/stats` - Dashboard statistics
 - `/api/dashboard` - Comprehensive dashboard data
-- `/api/scans` - Scan CRUD operations
+- `/api/scans` - Scan CRUD operations (user-filtered)
 - `/api/vulnerabilities` - Vulnerability data by scan
-- `/api/schedules` - Scheduled scan management
+- `/api/schedules` - Scheduled scan management (now supports daily/weekly/monthly/quarterly/annually)
 - `/api/settings` - User settings and API keys
 
 ### Data Architecture
@@ -74,7 +120,8 @@ Preferred communication style: Simple, everyday language.
 
 1. **users table:**
    - Authentication and user management
-   - API key storage for programmatic access
+   - Supports both email/password and Google OAuth
+   - Stores avatar and email from OAuth providers
 
 2. **scans table:**
    - Scan metadata (URL, type, status, timestamps)
@@ -88,7 +135,8 @@ Preferred communication style: Simple, everyday language.
 
 4. **scheduledScans table:**
    - Automated scan configuration
-   - Frequency and timing settings
+   - Frequency options: daily, weekly, monthly, quarterly, annually
+   - Timing settings with next/last run tracking
    - Active/inactive status
 
 5. **settings table:**
@@ -101,29 +149,22 @@ Preferred communication style: Simple, everyday language.
 - Database storage designed for PostgreSQL production deployment
 - IStorage interface allows for storage backend flexibility
 
-### Security Scanning Engine
+### Security Features
 
-**Scanner Implementation (server/scanner.ts):**
-- HTTP-based vulnerability detection
-- Security header validation
-- HTTPS enforcement checks
-- Extensible vulnerability check system
+**Authentication:**
+- Email/password authentication with session management
+- Google OAuth 2.0 for convenient Gmail-based sign-in
+- Session-based authentication with express-session
+- Secure cookie handling (httpOnly, secure in production)
 
-**Scan Types:**
-- Quick scan - Fast basic security checks
-- Deep scan - Comprehensive vulnerability analysis
+**Data Isolation:**
+- User-based data isolation across all tables
+- User can only access their own scans, schedules, and settings
+- Authenticated routes require active session
 
-**Vulnerability Detection:**
-- Missing security headers (CSP, X-Frame-Options, HSTS, etc.)
-- Protocol security (HTTPS enforcement)
-- Cheerio-based HTML parsing for advanced checks
-- Axios for HTTP request handling with timeout controls
-
-**Results Processing:**
-- Severity classification (Critical, High, Medium, Low)
-- Vulnerability counting and aggregation
-- Status tracking throughout scan lifecycle
-- Real-time scan progress updates via polling
+**Authorization:**
+- Protected routes with middleware
+- Automatic redirect to login for unauthorized access
 
 ### Development Workflow
 
@@ -165,7 +206,9 @@ Preferred communication style: Simple, everyday language.
 - @neondatabase/serverless - Neon PostgreSQL serverless driver
 - cheerio - Server-side HTML parsing for vulnerability detection
 - express-session - Session middleware
-- connect-pg-simple - PostgreSQL session store
+- passport - Authentication middleware
+- passport-google-oauth20 - Google OAuth 2.0 strategy
+- passport-local - Email/password authentication strategy
 - zod - Runtime type validation
 - nanoid/uuid - Unique ID generation
 
@@ -181,7 +224,7 @@ Preferred communication style: Simple, everyday language.
 **Provider:** Neon Serverless PostgreSQL
 - Connection via `@neondatabase/serverless` driver
 - Connection string from `DATABASE_URL` environment variable
-- Schema migrations managed by Drizzle Kit (output to `./migrations`)
+- Schema migrations managed by Drizzle Kit
 
 ### Styling System
 
@@ -206,6 +249,7 @@ Preferred communication style: Simple, everyday language.
 **Environment Configuration:**
 - `NODE_ENV` for environment detection
 - `DATABASE_URL` for database connection
+- `GOOGLE_CLIENT_ID` and `GOOGLE_CLIENT_SECRET` for Google OAuth
 - Development vs production mode switching
 - Replit-specific environment variables
 

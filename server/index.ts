@@ -1,6 +1,11 @@
 import express, { type Request, Response, NextFunction } from "express";
+import session from "express-session";
+import MemoryStore from "memorystore";
+import passport from "passport";
+import { Strategy as GoogleStrategy } from "passport-google-oauth20";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
+import { storage } from "./storage";
 import { createServer } from "http";
 
 const app = express();
@@ -9,6 +14,13 @@ const httpServer = createServer(app);
 declare module "http" {
   interface IncomingMessage {
     rawBody: unknown;
+    session?: any;
+  }
+}
+
+declare module "express-session" {
+  interface SessionData {
+    userId?: string;
   }
 }
 
@@ -21,6 +33,62 @@ app.use(
 );
 
 app.use(express.urlencoded({ extended: false }));
+
+const MemStore = MemoryStore(session);
+app.use(
+  session({
+    store: new MemStore(),
+    secret: process.env.SESSION_SECRET || "dev-secret-key",
+    resave: false,
+    saveUninitialized: true,
+    cookie: { secure: false, httpOnly: true, maxAge: 1000 * 60 * 60 * 24 * 7 },
+  }),
+);
+
+app.use(passport.initialize());
+app.use(passport.session());
+
+// Only configure Google Strategy if credentials are provided
+if (process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET) {
+  passport.use(
+    new GoogleStrategy(
+      {
+        clientID: process.env.GOOGLE_CLIENT_ID,
+        clientSecret: process.env.GOOGLE_CLIENT_SECRET,
+        callbackURL: "/api/auth/google/callback",
+      },
+      async (_accessToken, _refreshToken, profile, done) => {
+        try {
+          const googleId = profile.id;
+          const email = profile.emails?.[0]?.value || "";
+          const displayName = profile.displayName || email.split("@")[0];
+          const avatar = profile.photos?.[0]?.value;
+
+          let user = await storage.getUserByGoogleId(googleId);
+          if (!user) {
+            user = await storage.createGoogleUser(googleId, email, displayName, avatar);
+          }
+          return done(null, user);
+        } catch (error) {
+          return done(error);
+        }
+      }
+    )
+  );
+}
+
+passport.serializeUser((user: any, done) => {
+  done(null, user.id);
+});
+
+passport.deserializeUser(async (id: string, done) => {
+  try {
+    const user = await storage.getUser(id);
+    done(null, user);
+  } catch (error) {
+    done(error);
+  }
+});
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

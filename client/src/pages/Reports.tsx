@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -30,13 +30,24 @@ import {
 import { FileText, Download, Search, Eye, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Scan, Vulnerability } from "@shared/schema";
+import type { Scan, Vulnerability, Settings } from "@shared/schema";
 
 export default function Reports() {
   const [searchQuery, setSearchQuery] = useState("");
   const [severityFilter, setSeverityFilter] = useState("all");
   const [selectedScan, setSelectedScan] = useState<(Scan & { vulnerabilities: Vulnerability[] }) | null>(null);
+  const [apiKey, setApiKey] = useState<string>("");
   const { toast } = useToast();
+
+  const { data: settings } = useQuery<Settings & { apiKey: string }>({
+    queryKey: ["/api/settings"],
+  });
+
+  useEffect(() => {
+    if (settings?.apiKey) {
+      setApiKey(settings.apiKey);
+    }
+  }, [settings]);
 
   const { data: scans, isLoading } = useQuery<Scan[]>({
     queryKey: ["/api/scans"],
@@ -67,7 +78,7 @@ export default function Reports() {
 
   const handleViewReport = async (id: string) => {
     try {
-      const response = await fetch(`/api/scans/${id}`);
+      const response = await apiRequest("GET", `/api/scans/${id}`);
       const data = await response.json();
       setSelectedScan(data);
     } catch (error) {
@@ -80,7 +91,15 @@ export default function Reports() {
   };
 
   const handleDownloadReport = (id: string, format: string = "json") => {
-    window.open(`/api/reports/export/${id}?format=${format}`, "_blank");
+    if (!apiKey) {
+      toast({
+        title: "Error",
+        description: "API key not loaded. Please refresh the page.",
+        variant: "destructive",
+      });
+      return;
+    }
+    window.open(`/api/reports/export/${id}?format=${format}&apiKey=${encodeURIComponent(apiKey)}`, "_blank");
   };
 
   const handleDeleteReport = (id: string) => {

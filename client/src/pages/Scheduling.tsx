@@ -13,11 +13,14 @@ import {
   SelectItem,
   SelectTrigger,
   SelectValue,
+  SelectGroup,
+  SelectLabel,
 } from "@/components/ui/select";
 import { Calendar, Plus, Clock, Trash2, Play, Pause } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { ScheduledScan } from "@shared/schema";
+import type { ScheduledScan, FREQUENCY_OPTIONS } from "@shared/schema";
+import { FREQUENCY_OPTIONS as frequencyOptions } from "@shared/schema";
 
 export default function Scheduling() {
   const [newUrl, setNewUrl] = useState("");
@@ -143,10 +146,22 @@ export default function Scheduling() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  <SelectItem value="hourly">Hourly</SelectItem>
-                  <SelectItem value="daily">Daily</SelectItem>
-                  <SelectItem value="weekly">Weekly</SelectItem>
-                  <SelectItem value="monthly">Monthly</SelectItem>
+                  <SelectGroup>
+                    <SelectLabel>Regular</SelectLabel>
+                    {frequencyOptions.filter(opt => opt.category === "Regular").map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                  <SelectGroup>
+                    <SelectLabel>Extended</SelectLabel>
+                    {frequencyOptions.filter(opt => opt.category === "Extended").map(option => (
+                      <SelectItem key={option.value} value={option.value}>
+                        {option.label}
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
                 </SelectContent>
               </Select>
             </div>
@@ -197,7 +212,9 @@ export default function Scheduling() {
                       {schedule.targetUrl}
                     </p>
                     <div className="flex flex-wrap items-center gap-2 mt-1">
-                      <Badge variant="secondary">{schedule.frequency}</Badge>
+                      <Badge variant="secondary">
+                        {frequencyOptions.find(f => f.value === schedule.frequency)?.label || schedule.frequency}
+                      </Badge>
                       <span className="text-xs text-muted-foreground">
                         at {schedule.time}
                       </span>

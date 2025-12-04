@@ -94,7 +94,7 @@ export default function AppSidebar() {
       </SidebarContent>
       <SidebarFooter className="p-4">
         <p className="text-xs text-muted-foreground text-center">
-          Version 1.2025 JAP Dwssalopec
+          ZAP Scanner v1.2025
         </p>
       </SidebarFooter>
     </Sidebar>

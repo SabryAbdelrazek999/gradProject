@@ -1,19 +1,138 @@
 import type { Express } from "express";
 import { createServer, type Server } from "http";
+import passport from "passport";
 import { storage } from "./storage";
 import { performScan, getLastScanTime } from "./scanner";
 import { insertScanSchema, insertScheduledScanSchema } from "@shared/schema";
 import { randomUUID } from "crypto";
+
+let currentApiKey: string = "zap_sk_" + Math.random().toString(36).substring(2, 18);
+
+// Middleware to extract API key from header
+function getApiKey(req: any): string | null {
+  return req.headers["x-api-key"] || req.query.apiKey || null;
+}
+
+function getUserId(req: any): string | null {
+  return (req.session as any)?.userId || null;
+}
 
 export async function registerRoutes(
   httpServer: Server,
   app: Express
 ): Promise<Server> {
   
-  // ============ Stats & Dashboard ============
-  app.get("/api/stats", async (_req, res) => {
+  // ============ Authentication ============
+  app.post("/api/auth/signup", async (req, res) => {
     try {
-      const stats = await storage.getStats();
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ error: "Username and password required" });
+      }
+      const existingUser = await storage.getUserByUsername(username);
+      if (existingUser) {
+        return res.status(400).json({ error: "Username already exists" });
+      }
+      const user = await storage.createUser({ username, password });
+      (req.session as any).userId = user.id;
+      req.session.save((err: any) => {
+        if (err) {
+          return res.status(500).json({ error: "Failed to save session" });
+        }
+        res.status(201).json({ user: { id: user.id, username: user.username } });
+      });
+    } catch (error) {
+      console.error("Signup error:", error);
+      res.status(500).json({ error: "Failed to create account" });
+    }
+  });
+
+  app.post("/api/auth/login", async (req, res) => {
+    try {
+      const { username, password } = req.body;
+      if (!username || !password) {
+        return res.status(400).json({ error: "Username and password required" });
+      }
+      const user = await storage.getUserByUsername(username);
+      if (!user || user.password !== password) {
+        return res.status(401).json({ error: "Invalid credentials" });
+      }
+      (req.session as any).userId = user.id;
+      req.session.save((err: any) => {
+        if (err) {
+          return res.status(500).json({ error: "Failed to save session" });
+        }
+        res.json({ user: { id: user.id, username: user.username } });
+      });
+    } catch (error) {
+      console.error("Login error:", error);
+      res.status(500).json({ error: "Failed to login" });
+    }
+  });
+
+  app.get("/api/auth/me", async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const user = await storage.getUser(userId);
+      if (!user) {
+        return res.status(404).json({ error: "User not found" });
+      }
+      res.json({ user: { id: user.id, username: user.username } });
+    } catch (error) {
+      res.status(500).json({ error: "Failed to fetch user" });
+    }
+  });
+
+  app.post("/api/auth/logout", async (req, res) => {
+    req.session?.destroy((err: any) => {
+      if (err) {
+        return res.status(500).json({ error: "Failed to logout" });
+      }
+      res.json({ success: true });
+    });
+  });
+
+  // ============ Google OAuth ============
+  app.get("/api/auth/google", (req, res, next) => {
+    if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+      return res.status(400).json({ error: "Google OAuth is not configured. Please add GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET environment variables." });
+    }
+    passport.authenticate("google", { scope: ["profile", "email"] })(req, res, next);
+  });
+
+  app.get(
+    "/api/auth/google/callback",
+    (req, res, next) => {
+      if (!process.env.GOOGLE_CLIENT_ID || !process.env.GOOGLE_CLIENT_SECRET) {
+        return res.status(400).json({ error: "Google OAuth is not configured" });
+      }
+      passport.authenticate("google", { failureRedirect: "/login" })(req, res, next);
+    },
+    (req, res) => {
+      res.redirect("/");
+    }
+  );
+  
+  // ============ Stats & Dashboard ============
+  app.get("/api/stats", async (req, res) => {
+    try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const userScans = await storage.getUserScans(userId);
+      const totalVulnerabilities = userScans.reduce((sum, s) => sum + (s.totalVulnerabilities || 0), 0);
+      const criticalCount = userScans.reduce((sum, s) => sum + (s.criticalCount || 0), 0);
+      
+      const stats = {
+        totalScans: userScans.length,
+        totalVulnerabilities,
+        criticalCount,
+      };
       const lastScanTime = await getLastScanTime();
       res.json({ ...stats, lastScanTime });
     } catch (error) {
@@ -21,13 +140,25 @@ export async function registerRoutes(
     }
   });
 
-  app.get("/api/dashboard", async (_req, res) => {
+  app.get("/api/dashboard", async (req, res) => {
     try {
-      const stats = await storage.getStats();
-      const recentScans = await storage.getRecentScans(10);
-      const lastScanTime = await getLastScanTime();
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
       
-      // Calculate weekly data from recent scans
+      const userScans = await storage.getUserScans(userId);
+      const totalVulnerabilities = userScans.reduce((sum, s) => sum + (s.totalVulnerabilities || 0), 0);
+      const criticalCount = userScans.reduce((sum, s) => sum + (s.criticalCount || 0), 0);
+      
+      const stats = {
+        totalScans: userScans.length,
+        totalVulnerabilities,
+        criticalCount,
+      };
+      const lastScanTime = await getLastScanTime();
+      const recentScans = userScans.slice(0, 10);
+      
       const weeklyData = getWeeklyData(recentScans);
       
       res.json({
@@ -41,9 +172,13 @@ export async function registerRoutes(
   });
 
   // ============ Scans ============
-  app.get("/api/scans", async (_req, res) => {
+  app.get("/api/scans", async (req, res) => {
     try {
-      const scans = await storage.getAllScans();
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      const scans = await storage.getUserScans(userId);
       res.json(scans);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch scans" });
@@ -52,9 +187,13 @@ export async function registerRoutes(
 
   app.get("/api/scans/recent", async (req, res) => {
     try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
       const limit = parseInt(req.query.limit as string) || 5;
-      const scans = await storage.getRecentScans(limit);
-      res.json(scans);
+      const userScans = await storage.getUserScans(userId);
+      res.json(userScans.slice(0, limit));
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch recent scans" });
     }
@@ -62,8 +201,13 @@ export async function registerRoutes(
 
   app.get("/api/scans/:id", async (req, res) => {
     try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
       const scan = await storage.getScan(req.params.id);
-      if (!scan) {
+      if (!scan || scan.userId !== userId) {
         return res.status(404).json({ error: "Scan not found" });
       }
       const vulnerabilities = await storage.getVulnerabilitiesByScan(req.params.id);
@@ -75,14 +219,17 @@ export async function registerRoutes(
 
   app.post("/api/scans", async (req, res) => {
     try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+
       const parsed = insertScanSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid scan data", details: parsed.error });
       }
 
-      const scan = await storage.createScan(parsed.data);
-      
-      // Start scan asynchronously
+      const scan = await storage.createScan({ ...parsed.data, userId });
       performScan(scan.id, parsed.data.targetUrl, parsed.data.scanType || "quick");
       
       res.status(201).json(scan);
@@ -93,11 +240,18 @@ export async function registerRoutes(
 
   app.delete("/api/scans/:id", async (req, res) => {
     try {
-      await storage.deleteVulnerabilitiesByScan(req.params.id);
-      const deleted = await storage.deleteScan(req.params.id);
-      if (!deleted) {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const scan = await storage.getScan(req.params.id);
+      if (!scan || scan.userId !== userId) {
         return res.status(404).json({ error: "Scan not found" });
       }
+      
+      await storage.deleteVulnerabilitiesByScan(req.params.id);
+      const deleted = await storage.deleteScan(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete scan" });
@@ -105,11 +259,16 @@ export async function registerRoutes(
   });
 
   // ============ Vulnerabilities ============
-  app.get("/api/vulnerabilities", async (_req, res) => {
+  app.get("/api/vulnerabilities", async (req, res) => {
     try {
-      const scans = await storage.getAllScans();
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const userScans = await storage.getUserScans(userId);
       const allVulns = [];
-      for (const scan of scans) {
+      for (const scan of userScans) {
         const vulns = await storage.getVulnerabilitiesByScan(scan.id);
         allVulns.push(...vulns.map(v => ({ ...v, targetUrl: scan.targetUrl })));
       }
@@ -129,10 +288,16 @@ export async function registerRoutes(
   });
 
   // ============ Scheduled Scans ============
-  app.get("/api/schedules", async (_req, res) => {
+  app.get("/api/schedules", async (req, res) => {
     try {
-      const schedules = await storage.getAllScheduledScans();
-      res.json(schedules);
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const allSchedules = await storage.getAllScheduledScans();
+      const userSchedules = allSchedules.filter(s => s.userId === userId);
+      res.json(userSchedules);
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch schedules" });
     }
@@ -140,12 +305,17 @@ export async function registerRoutes(
 
   app.post("/api/schedules", async (req, res) => {
     try {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
       const parsed = insertScheduledScanSchema.safeParse(req.body);
       if (!parsed.success) {
         return res.status(400).json({ error: "Invalid schedule data", details: parsed.error });
       }
 
-      const schedule = await storage.createScheduledScan(parsed.data);
+      const schedule = await storage.createScheduledScan({ ...parsed.data, userId } as any);
       res.status(201).json(schedule);
     } catch (error) {
       res.status(500).json({ error: "Failed to create schedule" });
@@ -154,11 +324,18 @@ export async function registerRoutes(
 
   app.patch("/api/schedules/:id", async (req, res) => {
     try {
-      const schedule = await storage.updateScheduledScan(req.params.id, req.body);
-      if (!schedule) {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const schedule = await storage.getScheduledScan(req.params.id);
+      if (!schedule || schedule.userId !== userId) {
         return res.status(404).json({ error: "Schedule not found" });
       }
-      res.json(schedule);
+      
+      const updated = await storage.updateScheduledScan(req.params.id, req.body);
+      res.json(updated);
     } catch (error) {
       res.status(500).json({ error: "Failed to update schedule" });
     }
@@ -166,10 +343,17 @@ export async function registerRoutes(
 
   app.delete("/api/schedules/:id", async (req, res) => {
     try {
-      const deleted = await storage.deleteScheduledScan(req.params.id);
-      if (!deleted) {
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
+      }
+      
+      const schedule = await storage.getScheduledScan(req.params.id);
+      if (!schedule || schedule.userId !== userId) {
         return res.status(404).json({ error: "Schedule not found" });
       }
+      
+      const deleted = await storage.deleteScheduledScan(req.params.id);
       res.json({ success: true });
     } catch (error) {
       res.status(500).json({ error: "Failed to delete schedule" });
@@ -180,8 +364,7 @@ export async function registerRoutes(
   app.get("/api/settings", async (_req, res) => {
     try {
       const settings = await storage.getSettings();
-      const apiKey = "zap_sk_" + randomUUID().substring(0, 16);
-      res.json({ ...settings, apiKey });
+      res.json({ ...settings, apiKey: currentApiKey });
     } catch (error) {
       res.status(500).json({ error: "Failed to fetch settings" });
     }
@@ -202,8 +385,8 @@ export async function registerRoutes(
 
   app.post("/api/settings/regenerate-key", async (_req, res) => {
     try {
-      const newKey = "zap_sk_" + randomUUID().substring(0, 16);
-      res.json({ apiKey: newKey });
+      currentApiKey = "zap_sk_" + Math.random().toString(36).substring(2, 18);
+      res.json({ apiKey: currentApiKey });
     } catch (error) {
       res.status(500).json({ error: "Failed to regenerate API key" });
     }
@@ -212,10 +395,16 @@ export async function registerRoutes(
   // ============ Reports (Export) ============
   app.get("/api/reports/export/:scanId", async (req, res) => {
     try {
-      const scan = await storage.getScan(req.params.scanId);
-      if (!scan) {
-        return res.status(404).json({ error: "Scan not found" });
+      const userId = getUserId(req);
+      if (!userId) {
+        return res.status(401).json({ error: "Not authenticated" });
       }
+
+      const scan = await storage.getScan(req.params.scanId);
+      if (!scan || scan.userId !== userId) {
+        return res.status(403).json({ error: "Unauthorized: This report belongs to another user" });
+      }
+      
       const vulnerabilities = await storage.getVulnerabilitiesByScan(req.params.scanId);
       
       const format = req.query.format || "json";
