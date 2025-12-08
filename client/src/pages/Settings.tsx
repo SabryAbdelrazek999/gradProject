@@ -45,7 +45,7 @@ export default function Settings() {
   const updateMutation = useMutation({
     mutationFn: async (updates: Partial<SettingsType>) => {
       const response = await apiRequest("PATCH", "/api/settings", updates);
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings"] });
@@ -66,7 +66,7 @@ export default function Settings() {
   const regenerateKeyMutation = useMutation({
     mutationFn: async () => {
       const response = await apiRequest("POST", "/api/settings/regenerate-key");
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/settings"] });

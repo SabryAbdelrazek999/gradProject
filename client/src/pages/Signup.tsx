@@ -5,14 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth-context";
 import { Shield } from "lucide-react";
 
 export default function Signup() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { refreshAuth } = useAuth();
+  const { setToken, refreshAuth } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({ username: "", password: "", confirmPassword: "" });
 
@@ -28,13 +27,27 @@ export default function Signup() {
       return;
     }
 
+    if (formData.password.length < 6) {
+      toast({
+        title: "Error",
+        description: "Password must be at least 6 characters",
+        variant: "destructive",
+      });
+      return;
+    }
+
     setIsLoading(true);
 
     try {
-      const response = await apiRequest("POST", "/api/auth/signup", {
-        username: formData.username,
-        password: formData.password,
+      const response = await fetch("/api/auth/signup", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          username: formData.username,
+          password: formData.password,
+        }),
       });
+
       const data = await response.json();
 
       if (!response.ok) {
@@ -46,12 +59,14 @@ export default function Signup() {
         return;
       }
 
+      // Save JWT token
+      setToken(data.token);
+
       toast({
         title: "Account Created",
         description: "Logging you in...",
       });
       
-      // Refresh auth context and redirect to home
       await refreshAuth();
       setLocation("/");
     } catch (error) {

@@ -41,7 +41,7 @@ export default function ScanNow() {
   const scanMutation = useMutation({
     mutationFn: async (data: { targetUrl: string; scanType: string }) => {
       const response = await apiRequest("POST", "/api/scans", data);
-      return response.json();
+      return response;
     },
     onSuccess: (scan: Scan) => {
       setActiveScanId(scan.id);

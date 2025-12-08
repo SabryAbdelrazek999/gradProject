@@ -21,6 +21,7 @@ import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import type { ScheduledScan, FREQUENCY_OPTIONS } from "@shared/schema";
 import { FREQUENCY_OPTIONS as frequencyOptions } from "@shared/schema";
+import { Clock as SystemClock } from "@/components/Clock";
 
 export default function Scheduling() {
   const [newUrl, setNewUrl] = useState("");
@@ -35,7 +36,7 @@ export default function Scheduling() {
   const createMutation = useMutation({
     mutationFn: async (data: { targetUrl: string; frequency: string; time: string }) => {
       const response = await apiRequest("POST", "/api/schedules", data);
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/schedules"] });
@@ -57,7 +58,7 @@ export default function Scheduling() {
   const updateMutation = useMutation({
     mutationFn: async ({ id, updates }: { id: string; updates: Partial<ScheduledScan> }) => {
       const response = await apiRequest("PATCH", `/api/schedules/${id}`, updates);
-      return response.json();
+      return response;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ["/api/schedules"] });
@@ -115,7 +116,10 @@ export default function Scheduling() {
 
   return (
     <div className="p-6 space-y-6" data-testid="page-scheduling">
-      <h1 className="text-2xl font-semibold text-foreground">Scheduling</h1>
+      <div className="flex flex-col gap-4">
+        <h1 className="text-2xl font-semibold text-foreground">Scheduling</h1>
+        <SystemClock />
+      </div>
 
       <Card className="bg-card border-card-border">
         <CardHeader>

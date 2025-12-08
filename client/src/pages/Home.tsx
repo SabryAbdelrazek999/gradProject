@@ -1,7 +1,7 @@
 import { useQuery } from "@tanstack/react-query";
 import { FileText, ShieldAlert, Clock } from "lucide-react";
 import StatCard from "@/components/StatCard";
-import ActivityTable, { ActivityItem } from "@/components/ActivityTable";
+import ActivityTable from "@/components/ActivityTable";
 import { Skeleton } from "@/components/ui/skeleton";
 import type { Scan } from "@shared/schema";
 
@@ -23,21 +23,9 @@ export default function Home() {
     console.log(`View details for: ${type}`);
   };
 
-  const handleViewSource = (id: number) => {
+  const handleViewSource = (id: string) => {
     console.log(`View source for scan: ${id}`);
   };
-
-  const activities: ActivityItem[] = (recentScans || []).map((scan, index) => ({
-    id: index + 1,
-    type: "Completed Scans",
-    status: scan.status === "completed" ? "Completed" : scan.status === "running" ? "Running" : "Pending",
-    timestamp: scan.completedAt 
-      ? new Date(scan.completedAt).toLocaleString() 
-      : scan.startedAt 
-        ? new Date(scan.startedAt).toLocaleString() 
-        : "Pending",
-    action: "View Details",
-  }));
 
   if (statsLoading || scansLoading) {
     return (
@@ -81,7 +69,7 @@ export default function Home() {
         />
       </div>
 
-      <ActivityTable activities={activities} onViewSource={handleViewSource} />
+  <ActivityTable activities={recentScans || []} onViewSource={handleViewSource} />
     </div>
   );
 }

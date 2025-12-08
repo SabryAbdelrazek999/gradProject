@@ -4,10 +4,12 @@ import {
   type Vulnerability, type InsertVulnerability,
   type ScheduledScan, type InsertScheduledScan,
   type Settings, type InsertSettings,
-  users, scans, vulnerabilities, scheduledScans, settings
+  users, scans, vulnerabilities, scheduledScans, settings,
+  type Report, type InsertReport, reports
 } from "@shared/schema";
 import { randomUUID } from "crypto";
-import { drizzle } from "drizzle-orm/neon-http";
+import { drizzle } from "drizzle-orm/node-postgres";
+import { Pool } from "pg";
 import { eq, sql } from "drizzle-orm";
 
 export interface IStorage {
@@ -46,6 +48,11 @@ export interface IStorage {
   createSettings(settings: InsertSettings): Promise<Settings>;
   updateSettings(id: string, updates: Partial<Settings>): Promise<Settings | undefined>;
 
+  // Reports
+  getReportsByUser(userId: string): Promise<Report[]>;
+  createReport(report: InsertReport): Promise<Report>;
+  deleteReport(id: string): Promise<boolean>;
+
   // Stats
   getStats(): Promise<{ totalScans: number; totalVulnerabilities: number; criticalCount: number }>;
 }
@@ -56,6 +63,7 @@ export class MemStorage implements IStorage {
   private vulnerabilities: Map<string, Vulnerability>;
   private scheduledScans: Map<string, ScheduledScan>;
   private settings: Map<string, Settings>;
+  private reports: Map<string, Report>;
 
   constructor() {
     this.users = new Map();
@@ -63,6 +71,7 @@ export class MemStorage implements IStorage {
     this.vulnerabilities = new Map();
     this.scheduledScans = new Map();
     this.settings = new Map();
+    this.reports = new Map();
 
     // Initialize default settings
     const defaultSettings: Settings = {
@@ -306,6 +315,38 @@ export class MemStorage implements IStorage {
     return undefined;
   }
 
+  // Reports
+  async getReportsByUser(userId: string): Promise<Report[]> {
+    return Array.from(this.reports.values()).filter(r => r.userId === userId).sort((a, b) => {
+      const da = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+      const db = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+      return db - da;
+    });
+  }
+
+  async createReport(insertReport: InsertReport): Promise<Report> {
+    const id = randomUUID();
+    const report: Report = {
+      id,
+      userId: insertReport.userId,
+      scanId: (insertReport as any).scanId ?? null,
+      reportName: insertReport.reportName,
+      reportPath: insertReport.reportPath,
+      createdAt: insertReport.createdAt,
+      total: (insertReport as any).total ?? 0,
+      critical: (insertReport as any).critical ?? 0,
+      high: (insertReport as any).high ?? 0,
+      medium: (insertReport as any).medium ?? 0,
+      low: (insertReport as any).low ?? 0,
+    } as any;
+    this.reports.set(id, report);
+    return report;
+  }
+
+  async deleteReport(id: string): Promise<boolean> {
+    return this.reports.delete(id);
+  }
+
   // Stats
   async getStats(): Promise<{ totalScans: number; totalVulnerabilities: number; criticalCount: number }> {
     const scans = Array.from(this.scans.values());
@@ -318,13 +359,24 @@ export class MemStorage implements IStorage {
 
 export class DbStorage implements IStorage {
   private db: ReturnType<typeof drizzle>;
+  private pool: Pool;
 
   constructor() {
     const dbUrl = process.env.DATABASE_URL;
     if (!dbUrl) {
       throw new Error("DATABASE_URL environment variable is not set. Using in-memory storage instead.");
     }
-    this.db = drizzle(dbUrl);
+    
+    // Create PostgreSQL connection pool
+    this.pool = new Pool({
+      connectionString: dbUrl,
+      max: 20,
+      idleTimeoutMillis: 30000,
+      connectionTimeoutMillis: 2000,
+    });
+    
+    this.db = drizzle(this.pool);
+    console.log("✅ PostgreSQL connected successfully");
   }
 
   // Users
@@ -486,6 +538,18 @@ export class DbStorage implements IStorage {
   async getSettings(userId?: string): Promise<Settings | undefined> {
     if (userId) {
       const result = await this.db.select().from(settings).where(eq(settings.userId, userId)).limit(1);
+      if (result.length === 0) {
+        // Create default settings for this user if they don't exist
+        const id = randomUUID();
+        const newSettings = await this.db.insert(settings).values({
+          id,
+          userId,
+          scanDepth: "medium",
+          autoScan: false,
+          emailNotifications: true,
+        }).returning();
+        return newSettings[0];
+      }
       return result[0];
     }
     const result = await this.db.select().from(settings).limit(1);
@@ -507,6 +571,34 @@ export class DbStorage implements IStorage {
   async updateSettings(id: string, updates: Partial<Settings>): Promise<Settings | undefined> {
     const result = await this.db.update(settings).set(updates).where(eq(settings.id, id)).returning();
     return result[0];
+  }
+
+  // Reports
+  async getReportsByUser(userId: string): Promise<Report[]> {
+    return await this.db.select().from(reports).where(eq(reports.userId, userId)).orderBy(sql`${reports.createdAt} DESC NULLS LAST`);
+  }
+
+  async createReport(insertReport: InsertReport): Promise<Report> {
+    const id = randomUUID();
+    const result = await this.db.insert(reports).values({
+      id,
+      userId: insertReport.userId,
+      scanId: (insertReport as any).scanId ?? null,
+      reportName: insertReport.reportName,
+      reportPath: insertReport.reportPath,
+      createdAt: insertReport.createdAt,
+      total: (insertReport as any).total ?? 0,
+      critical: (insertReport as any).critical ?? 0,
+      high: (insertReport as any).high ?? 0,
+      medium: (insertReport as any).medium ?? 0,
+      low: (insertReport as any).low ?? 0,
+    }).returning();
+    return result[0];
+  }
+
+  async deleteReport(id: string): Promise<boolean> {
+    await this.db.delete(reports).where(eq(reports.id, id));
+    return true;
   }
 
   // Stats

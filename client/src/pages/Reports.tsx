@@ -30,7 +30,7 @@ import {
 import { FileText, Download, Search, Eye, Trash2 } from "lucide-react";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
-import type { Scan, Vulnerability, Settings } from "@shared/schema";
+import type { Settings, Report, Scan, Vulnerability } from "@shared/schema";
 
 export default function Reports() {
   const [searchQuery, setSearchQuery] = useState("");
@@ -49,16 +49,16 @@ export default function Reports() {
     }
   }, [settings]);
 
-  const { data: scans, isLoading } = useQuery<Scan[]>({
-    queryKey: ["/api/scans"],
+  const { data: reports, isLoading } = useQuery<Report[]>({
+    queryKey: ["/api/reports"],
   });
 
   const deleteMutation = useMutation({
     mutationFn: async (id: string) => {
-      await apiRequest("DELETE", `/api/scans/${id}`);
+      await apiRequest("DELETE", `/api/reports/${id}`);
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/scans"] });
+      queryClient.invalidateQueries({ queryKey: ["/api/reports"] });
       queryClient.invalidateQueries({ queryKey: ["/api/stats"] });
       toast({
         title: "Report Deleted",
@@ -67,20 +67,20 @@ export default function Reports() {
     },
   });
 
-  const filteredScans = (scans || []).filter((scan) => {
-    const matchesSearch = scan.targetUrl.toLowerCase().includes(searchQuery.toLowerCase());
-    const matchesSeverity =
-      severityFilter === "all" ||
-      (severityFilter === "critical" && (scan.criticalCount || 0) > 0) ||
-      (severityFilter === "clean" && (scan.criticalCount || 0) === 0);
-    return matchesSearch && matchesSeverity;
+  const filteredReports = (reports || []).filter((rep) => {
+    const matchesSearch = rep.reportName.toLowerCase().includes(searchQuery.toLowerCase()) || (rep.reportPath || "").toLowerCase().includes(searchQuery.toLowerCase());
+    return matchesSearch;
   });
 
-  const handleViewReport = async (id: string) => {
+  const handleViewReport = async (reportPath: string) => {
     try {
-      const response = await apiRequest("GET", `/api/scans/${id}`);
-      const data = await response.json();
-      setSelectedScan(data);
+      // reportPath is stored as something like '/api/reports/export/<scanId>'
+      const url = `${reportPath}?format=json`;
+      const data = await apiRequest("GET", url);
+      // api returns { report: { generatedAt, scan, vulnerabilities, summary } }
+      if (data && data.report) {
+        setSelectedScan({ ...(data.report.scan || {}), vulnerabilities: data.report.vulnerabilities || [] } as any);
+      }
     } catch (error) {
       toast({
         title: "Error",
@@ -90,7 +90,7 @@ export default function Reports() {
     }
   };
 
-  const handleDownloadReport = (id: string, format: string = "json") => {
+  const handleDownloadReport = (reportPath: string, format: string = "json") => {
     if (!apiKey) {
       toast({
         title: "Error",
@@ -99,7 +99,8 @@ export default function Reports() {
       });
       return;
     }
-    window.open(`/api/reports/export/${id}?format=${format}&apiKey=${encodeURIComponent(apiKey)}`, "_blank");
+    const url = `${reportPath}?format=${format}&apiKey=${encodeURIComponent(apiKey)}`;
+    window.open(url, "_blank");
   };
 
   const handleDeleteReport = (id: string) => {
@@ -155,76 +156,65 @@ export default function Reports() {
           </div>
         </CardHeader>
         <CardContent className="p-0">
-          {filteredScans.length === 0 ? (
+          {filteredReports.length === 0 ? (
             <div className="p-8 text-center text-muted-foreground">
-              {scans?.length === 0 
-                ? "No scans yet. Start a scan to see reports here."
+              {reports?.length === 0 
+                ? "No reports yet. Start a scan to see reports here."
                 : "No reports match your search criteria."}
             </div>
           ) : (
             <Table>
               <TableHeader>
                 <TableRow className="border-border">
-                  <TableHead className="text-muted-foreground">Target URL</TableHead>
+                  <TableHead className="text-muted-foreground">Target / Report</TableHead>
                   <TableHead className="text-muted-foreground">Date</TableHead>
-                  <TableHead className="text-muted-foreground">Vulnerabilities</TableHead>
+                  <TableHead className="text-muted-foreground">Total</TableHead>
                   <TableHead className="text-muted-foreground">Critical</TableHead>
-                  <TableHead className="text-muted-foreground">Status</TableHead>
+                  <TableHead className="text-muted-foreground">High</TableHead>
                   <TableHead className="text-muted-foreground text-right">Actions</TableHead>
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filteredScans.map((scan) => (
-                  <TableRow key={scan.id} className="border-border" data-testid={`report-row-${scan.id}`}>
+                {filteredReports.map((rep) => (
+                  <TableRow key={rep.id} className="border-border" data-testid={`report-row-${rep.id}`}>
                     <TableCell className="font-mono text-sm text-foreground max-w-xs truncate">
-                      {scan.targetUrl}
+                      {rep.reportName}
                     </TableCell>
                     <TableCell className="text-muted-foreground">
-                      {scan.completedAt 
-                        ? new Date(scan.completedAt).toLocaleDateString() 
-                        : scan.startedAt 
-                          ? new Date(scan.startedAt).toLocaleDateString() 
-                          : "-"}
+                      {rep.createdAt ? new Date(rep.createdAt).toLocaleDateString() : "-"}
                     </TableCell>
                     <TableCell>
-                      <Badge variant="secondary">{scan.totalVulnerabilities || 0}</Badge>
+                      <Badge variant="secondary">{rep.total ?? 0}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge variant={(scan.criticalCount || 0) > 0 ? "destructive" : "secondary"}>
-                        {scan.criticalCount || 0}
-                      </Badge>
+                      <Badge variant={rep.critical && rep.critical > 0 ? "destructive" : "secondary"}>{rep.critical ?? 0}</Badge>
                     </TableCell>
                     <TableCell>
-                      <Badge 
-                        variant={scan.status === "completed" ? "default" : scan.status === "failed" ? "destructive" : "secondary"}
-                        className={scan.status === "completed" ? "bg-primary/20 text-primary" : ""}
-                      >
-                        {scan.status}
-                      </Badge>
+                      <Badge variant={rep.high && rep.high > 0 ? "destructive" : "secondary"}>{rep.high ?? 0}</Badge>
                     </TableCell>
                     <TableCell className="text-right">
                       <div className="flex items-center justify-end gap-1">
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleViewReport(scan.id)}
-                          data-testid={`button-view-report-${scan.id}`}
+                          onClick={() => handleViewReport(rep.reportPath)}
+                          data-testid={`button-view-report-${rep.id}`}
                         >
                           <Eye className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleDownloadReport(scan.id, "html")}
-                          data-testid={`button-download-report-${scan.id}`}
+                          onClick={() => handleDownloadReport(rep.reportPath, "html")}
+                          data-testid={`button-download-report-${rep.id}`}
                         >
                           <Download className="w-4 h-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          onClick={() => handleDeleteReport(scan.id)}
-                          data-testid={`button-delete-report-${scan.id}`}
+                          onClick={() => handleDeleteReport(rep.id)}
+                          data-testid={`button-delete-report-${rep.id}`}
                         >
                           <Trash2 className="w-4 h-4" />
                         </Button>
@@ -302,11 +292,11 @@ export default function Reports() {
               </div>
 
               <div className="flex justify-end gap-2">
-                <Button variant="secondary" onClick={() => handleDownloadReport(selectedScan.id, "json")}>
+                <Button variant="secondary" onClick={() => handleDownloadReport(`/api/reports/export/${selectedScan.id}`, "json")}>
                   <Download className="w-4 h-4 mr-2" />
                   Download JSON
                 </Button>
-                <Button onClick={() => handleDownloadReport(selectedScan.id, "html")}>
+                  <Button onClick={() => handleDownloadReport(`/api/reports/export/${selectedScan.id}`, "html")}>
                   <Download className="w-4 h-4 mr-2" />
                   Download HTML
                 </Button>

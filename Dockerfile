@@ -1,29 +1,36 @@
-# استخدم نسخة Node.js خفيفة
-FROM node:20-alpine
+# ---- Build Stage ----
+FROM node:20-slim AS builder
 
-# نحدد مجلد العمل
 WORKDIR /app
 
-# تثبيت bash و dumb-init لإدارة الإشارات بشكل صحيح
-RUN apk add --no-cache dumb-init bash
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    dumb-init bash git && \
+    rm -rf /var/lib/apt/lists/*
 
-# نسخ ملفات الحزم
 COPY package.json package-lock.json ./
-
-# تثبيت كل dependencies (dev + prod)
 RUN npm ci
 
-# نسخ باقي الكود
 COPY . .
-
-# عمل build للمشروع (client + server)
 RUN npm run build
 
-# فتح المنفذ
+# ---- Production Stage ----
+FROM node:20-slim
+
+WORKDIR /app
+
+RUN apt-get update && apt-get install -y --no-install-recommends dumb-init curl tzdata \
+    && rm -rf /var/lib/apt/lists/*
+
+COPY package.json package-lock.json ./
+RUN npm ci --only=production
+
+COPY --from=builder /app/dist ./dist
+COPY --from=builder /app/server ./server
+COPY --from=builder /app/shared ./shared
+
 EXPOSE 5000
+ENV NODE_ENV=production
+ENV PORT=5000
 
-# dumb-init لإدارة الإشارات بشكل صحيح
 ENTRYPOINT ["dumb-init", "--"]
-
-# تشغيل نسخة الإنتاج
 CMD ["npm", "run", "start"]

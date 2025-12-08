@@ -5,12 +5,13 @@ interface Scan {
   id: string;
   targetUrl: string;
   scanType: string;
-  completedAt?: string;
-  totalVulnerabilities?: number;
-  criticalCount?: number;
-  highCount?: number;
-  mediumCount?: number;
-  lowCount?: number;
+  completedAt?: string | Date | null;
+  startedAt?: string | Date | null;
+  totalVulnerabilities?: number | null;
+  criticalCount?: number | null;
+  highCount?: number | null;
+  mediumCount?: number | null;
+  lowCount?: number | null;
 }
 
 interface ActivityTableProps {

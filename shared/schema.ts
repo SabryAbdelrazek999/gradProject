@@ -72,6 +72,8 @@ export const scheduledScans = pgTable("scheduled_scans", {
   targetUrl: text("target_url").notNull(),
   frequency: text("frequency").notNull(), // daily, weekly, monthly, quarterly, annually
   time: text("time").notNull(),
+  dayOfWeek: integer("day_of_week"), // 0-6 for Weekly (0 = Sunday)
+  dayOfMonth: integer("day_of_month"), // 1-31 for Monthly
   enabled: boolean("enabled").default(true),
   lastRun: timestamp("last_run"),
   nextRun: timestamp("next_run"),
@@ -85,10 +87,22 @@ export const FREQUENCY_OPTIONS = [
   { value: "annually", label: "Annually (Yearly)", category: "Extended" },
 ] as const;
 
+export const DAYS_OF_WEEK = [
+  { value: 0, label: "Sunday" },
+  { value: 1, label: "Monday" },
+  { value: 2, label: "Tuesday" },
+  { value: 3, label: "Wednesday" },
+  { value: 4, label: "Thursday" },
+  { value: 5, label: "Friday" },
+  { value: 6, label: "Saturday" },
+] as const;
+
 export const insertScheduledScanSchema = createInsertSchema(scheduledScans).pick({
   targetUrl: true,
   frequency: true,
   time: true,
+  dayOfWeek: true,
+  dayOfMonth: true,
   enabled: true,
 });
 
@@ -103,6 +117,37 @@ export const settings = pgTable("settings", {
   autoScan: boolean("auto_scan").default(false),
   emailNotifications: boolean("email_notifications").default(true),
 });
+
+// Reports table
+export const reports = pgTable("reports", {
+  id: varchar("id", { length: 36 }).primaryKey(),
+  userId: varchar("user_id", { length: 36 }).notNull(),
+  scanId: varchar("scan_id", { length: 36 }),
+  reportName: text("report_name").notNull(),
+  reportPath: text("report_path").notNull(),
+  createdAt: timestamp("created_at").notNull(),
+  total: integer("total").default(0),
+  critical: integer("critical").default(0),
+  high: integer("high").default(0),
+  medium: integer("medium").default(0),
+  low: integer("low").default(0),
+});
+
+export const insertReportSchema = createInsertSchema(reports).pick({
+  userId: true,
+  reportName: true,
+  reportPath: true,
+  createdAt: true,
+  scanId: true,
+  total: true,
+  critical: true,
+  high: true,
+  medium: true,
+  low: true,
+});
+
+export type InsertReport = z.infer<typeof insertReportSchema>;
+export type Report = typeof reports.$inferSelect;
 
 export const insertSettingsSchema = createInsertSchema(settings).omit({
   id: true,

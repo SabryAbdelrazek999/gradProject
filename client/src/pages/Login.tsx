@@ -5,15 +5,13 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
-import { apiRequest } from "@/lib/queryClient";
 import { useAuth } from "@/lib/auth-context";
 import { Shield } from "lucide-react";
-import { SiGoogle } from "react-icons/si";
 
 export default function Login() {
   const [, setLocation] = useLocation();
   const { toast } = useToast();
-  const { refreshAuth } = useAuth();
+  const { setToken, refreshAuth } = useAuth();
   const [isLoading, setIsLoading] = useState(false);
   const [formData, setFormData] = useState({ username: "", password: "" });
 
@@ -22,7 +20,12 @@ export default function Login() {
     setIsLoading(true);
 
     try {
-      const response = await apiRequest("POST", "/api/auth/login", formData);
+      const response = await fetch("/api/auth/login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(formData),
+      });
+
       const data = await response.json();
 
       if (!response.ok) {
@@ -34,12 +37,14 @@ export default function Login() {
         return;
       }
 
+      // Save JWT token
+      setToken(data.token);
+
       toast({
         title: "Login Successful",
         description: "Redirecting...",
       });
       
-      // Refresh auth context and redirect to home
       await refreshAuth();
       setLocation("/");
     } catch (error) {
@@ -93,24 +98,6 @@ export default function Login() {
               {isLoading ? "Signing in..." : "Sign In"}
             </Button>
           </form>
-
-          <div className="mt-6">
-            <div className="relative mb-4">
-              <div className="absolute inset-0 flex items-center">
-                <div className="w-full border-t border-muted" />
-              </div>
-              <div className="relative flex justify-center text-sm">
-                <span className="px-2 bg-card text-muted-foreground">Or continue with</span>
-              </div>
-            </div>
-
-            <a href="/api/auth/google">
-              <Button type="button" variant="outline" className="w-full" data-testid="button-google-login">
-                <SiGoogle className="w-4 h-4 mr-2" />
-                Sign in with Google
-              </Button>
-            </a>
-          </div>
 
           <div className="mt-6 text-center text-sm text-muted-foreground">
             Don't have an account?{" "}
